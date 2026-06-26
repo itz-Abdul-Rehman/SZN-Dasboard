@@ -235,17 +235,26 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => handleGenerate(r.id, { dateFrom: r.dateFrom, dateTo: r.dateTo, reportTitle: r.title, autoDownload: true })}
-                  disabled={generatingId !== null}
-                  title={`Download data for ${r.title}`}
-                  className={cn(
-                    "flex items-center gap-1.5 text-xs text-on-surface-variant border border-border px-3 py-1.5 hover:bg-surface-high hover:text-on-surface transition-colors flex-shrink-0 ml-4 opacity-0 group-hover:opacity-100",
-                    generatingId !== null && "opacity-60 cursor-not-allowed"
-                  )}
-                >
-                  <Download size={12} /> {generatingId === r.id ? "Generating…" : "Download"}
-                </button>
+                {generatingId === r.id ? (
+                  <button
+                    disabled
+                    className="flex items-center gap-1.5 text-xs text-on-surface-variant border border-border px-3 py-1.5 flex-shrink-0 ml-4 opacity-60 cursor-not-allowed"
+                  >
+                    <RefreshCw size={12} className="animate-spin" /> Generating…
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleGenerate(r.id, { dateFrom: r.dateFrom, dateTo: r.dateTo, reportTitle: r.title, autoDownload: true })}
+                    disabled={generatingId !== null}
+                    title={`Download data for ${r.title}`}
+                    className={cn(
+                      "flex items-center gap-1.5 text-xs text-on-surface-variant border border-border px-3 py-1.5 hover:bg-surface-high hover:text-on-surface transition-colors flex-shrink-0 ml-4 opacity-0 group-hover:opacity-100",
+                      generatingId !== null && "hidden"
+                    )}
+                  >
+                    <Download size={12} /> Download
+                  </button>
+                )}
               </div>
             ))}
           </div>

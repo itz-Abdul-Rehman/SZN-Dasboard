@@ -41,7 +41,7 @@ const bottomItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [role, setRole] = useState<string>("admin");
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchRole = async () => {
@@ -65,7 +65,7 @@ export default function Sidebar() {
     return pathname.startsWith(href);
   };
 
-  const visibleNav = navItems.filter((item) => item.roles.includes(role));
+  const visibleNav = role ? navItems.filter((item) => item.roles.includes(role)) : [];
 
   return (
     <aside className="flex flex-col w-[210px] min-h-screen bg-surface-low border-r border-border flex-shrink-0">
