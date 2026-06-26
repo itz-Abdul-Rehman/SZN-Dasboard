@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -18,17 +18,19 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/sales", label: "Sales Dashboard", icon: TrendingUp },
-  { href: "/dashboard/ads", label: "Ads Dashboard", icon: Megaphone },
-  { href: "/dashboard/setter", label: "Appointment Setter", icon: UserCheck },
-  { href: "/dashboard/call-logs", label: "Call Logs", icon: PhoneCall },
-  { href: "/dashboard/lead-tagging", label: "Lead Tagging", icon: Tag },
-  { href: "/dashboard/reports", label: "Reports", icon: FileText },
-  { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "closer", "setter", "client"] },
+  { href: "/dashboard/sales", label: "Sales Dashboard", icon: TrendingUp, roles: ["admin"] },
+  { href: "/dashboard/ads", label: "Ads Dashboard", icon: Megaphone, roles: ["admin"] },
+  { href: "/dashboard/setter", label: "Appointment Setter", icon: UserCheck, roles: ["admin", "setter"] },
+  { href: "/dashboard/call-logs", label: "Call Logs", icon: PhoneCall, roles: ["admin", "closer"] },
+  { href: "/dashboard/lead-tagging", label: "Lead Tagging", icon: Tag, roles: ["admin", "closer"] },
+  { href: "/dashboard/reports", label: "Reports", icon: FileText, roles: ["admin"] },
+  { href: "/dashboard/leaderboard", label: "Leaderboard", icon: Trophy, roles: ["admin", "closer"] },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings, roles: ["admin"] },
 ];
 
 const bottomItems = [
@@ -38,11 +40,32 @@ const bottomItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [role, setRole] = useState<string>("admin");
+
+  useEffect(() => {
+    const fetchRole = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      if (profile?.role) setRole(profile.role);
+    };
+    fetchRole();
+  }, []);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
   };
+
+  const visibleNav = navItems.filter((item) => item.roles.includes(role));
 
   return (
     <aside className="flex flex-col w-[210px] min-h-screen bg-surface-low border-r border-border flex-shrink-0">
@@ -61,7 +84,7 @@ export default function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ href, label, icon: Icon }) => (
+        {visibleNav.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
@@ -90,7 +113,10 @@ export default function Sidebar() {
             {label}
           </Link>
         ))}
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-danger hover:bg-surface-container transition-colors">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded text-sm text-danger hover:bg-surface-container transition-colors"
+        >
           <LogOut size={16} />
           Logout
         </button>
