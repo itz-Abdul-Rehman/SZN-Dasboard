@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+:root {
+  --background: #131313;
+  --foreground: #e5e2e1;
+  --card: #1c1b1b;
+  --border: #2a2a2a;
+  --brand: #0566d9;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1c1b1b;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3939;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4949;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Glass morphism card */
+  .glass {
+    background: rgba(28, 27, 27, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  /* Trend up/down */
+  .trend-up {
+    color: #10B981;
+  }
+  .trend-down {
+    color: #EF4444;
+  }
+  .trend-neutral {
+    color: #8e9192;
+  }
+
+  /* Status badge colors */
+  .badge-active {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10B981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+  .badge-paused {
+    background: rgba(245, 158, 11, 0.12);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+  .badge-archived {
+    background: rgba(142, 145, 146, 0.12);
+    color: #8e9192;
+    border: 1px solid rgba(142, 145, 146, 0.2);
+  }
+  .badge-closed {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10B981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+  .badge-lost {
+    background: rgba(239, 68, 68, 0.12);
+    color: #EF4444;
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  .badge-rescheduled {
+    background: rgba(173, 198, 255, 0.12);
+    color: #adc6ff;
+    border: 1px solid rgba(173, 198, 255, 0.2);
+  }
+  .badge-noshow {
+    background: rgba(245, 158, 11, 0.12);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+}

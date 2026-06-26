@@ -1,0 +1,20 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/anomaly-check",
+      "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/daily-targets",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/meta/sync",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/reports/generate",
+      "schedule": "59 23 * * *"
+    }
+  ]
+}
