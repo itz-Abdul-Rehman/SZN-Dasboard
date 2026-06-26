@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import {
   Target, Megaphone, Sparkles, Bell, AlertTriangle,
-  Users, ChevronRight, Check, X, RefreshCw
+  Users, ChevronRight, Check, RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 

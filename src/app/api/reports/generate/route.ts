@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     if (dateTo)   callsQuery = callsQuery.lte("call_date", dateTo);
     const { data: calls } = await callsQuery;
 
-    let adsQuery = supabase.from("ad_campaigns").select("spend, roas").eq("status", "active");
+    const adsQuery = supabase.from("ad_campaigns").select("spend, roas").eq("status", "active");
     const { data: ads } = await adsQuery;
 
     const closed = calls?.filter((c) => c.outcome === "closed") ?? [];
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     const periodStart = dateFrom ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0];
     const periodEnd   = dateTo   ?? new Date().toISOString().split("T")[0];
 
-    let goalCallsQuery = supabase.from("calls").select("client_id, outcome, revenue").gte("call_date", periodStart).lte("call_date", periodEnd);
+    const goalCallsQuery = supabase.from("calls").select("client_id, outcome, revenue").gte("call_date", periodStart).lte("call_date", periodEnd);
     const { data: goalCalls } = await goalCallsQuery;
 
     const clientGoals = await Promise.all(
