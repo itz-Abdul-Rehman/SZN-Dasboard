@@ -74,6 +74,20 @@ export default function SettingsPage() {
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
+  // Load persisted agency settings (AI personality + alert thresholds)
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.settings) {
+          setAiPersonality(d.settings.ai_personality ?? "Coach");
+          setCloseRateThreshold(String(d.settings.close_rate_threshold ?? "20"));
+          setRpcThreshold(String(d.settings.rpc_drop_threshold ?? "30"));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // When selected client changes, populate fields
   useEffect(() => {
     const c = clients.find((cl) => cl.id === selectedClientId);
@@ -110,7 +124,15 @@ export default function SettingsPage() {
   }
 
   const handleSave = async () => {
-    await new Promise((r) => setTimeout(r, 600));
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ai_personality: aiPersonality,
+        close_rate_threshold: Number(closeRateThreshold),
+        rpc_drop_threshold: Number(rpcThreshold),
+      }),
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };

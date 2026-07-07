@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { getMasterKpis, getClientGoalProgress } from "@/lib/db/queries";
+import { getMasterKpis, getClientGoalProgress, getAiToneInstruction } from "@/lib/db/queries";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -9,9 +9,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const mode: "insights" | "next-action" = body.mode ?? "insights";
 
-    const [kpis, clientGoals] = await Promise.all([
+    const [kpis, clientGoals, tone] = await Promise.all([
       getMasterKpis(),
       getClientGoalProgress(),
+      getAiToneInstruction(),
     ]);
 
     const kpiSummary = `
@@ -38,9 +39,10 @@ Pacing: $${kpis.pacing.toLocaleString()}
       .join("\n");
 
     const systemPrompt =
-      mode === "insights"
+      (mode === "insights"
         ? `You are a sharp performance analyst for a marketing agency. Given the KPI data below, generate exactly 4-6 concise bullet observations. Each bullet must start with a bold label like **Revenue**, **Close Rate**, etc. Be specific with numbers. No fluff, no preamble, no conclusion. Just the bullets.`
-        : `You are a strategic advisor for a marketing agency. Given the KPI data below, generate exactly 3 concrete next best actions the agency should take this week. Each action must start with a bold label. Be specific and actionable. No preamble or conclusion.`;
+        : `You are a strategic advisor for a marketing agency. Given the KPI data below, generate exactly 3 concrete next best actions the agency should take this week. Each action must start with a bold label. Be specific and actionable. No preamble or conclusion.`) +
+      ` ${tone}`;
 
     const userPrompt = `KPIs:\n${kpiSummary}\n\nClient Goals:\n${goalsSummary}`;
 

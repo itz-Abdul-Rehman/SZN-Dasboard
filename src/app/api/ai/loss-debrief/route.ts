@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { sendSlackMessage, buildLossDebriefMessage } from "@/lib/slack";
+import { getAiToneInstruction } from "@/lib/db/queries";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
     const { leadName, leadSource, objection, notes, closerName } = await req.json();
+    const tone = await getAiToneInstruction();
 
     const callDetails = [
       `Lead: ${leadName ?? "Unknown"}`,
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "system",
-          content: `You are a sales coach for a high-ticket coaching agency. A call was lost. Given the details, produce a debrief with exactly 3 short sections: **What went wrong**, **Key objection**, **How to improve**. Be direct and specific. No preamble.`,
+          content: `You are a sales coach for a high-ticket coaching agency. A call was lost. Given the details, produce a debrief with exactly 3 short sections: **What went wrong**, **Key objection**, **How to improve**. Be direct and specific. No preamble. ${tone}`,
         },
         { role: "user", content: callDetails },
       ],

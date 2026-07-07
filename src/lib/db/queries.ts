@@ -30,6 +30,27 @@ function isNoShow(outcome: string) { return NOSHOW_OUTCOMES.includes(outcome as 
 function isRescheduled(outcome: string) { return outcome === "rescheduled"; }
 function isPif(outcome: string) { return outcome === "paid_in_full" || outcome === "closed"; }
 
+// ─── Agency settings ─────────────────────────────────────────
+
+const PERSONALITY_TONE: Record<string, string> = {
+  Coach: "Adopt a supportive, encouraging coaching tone.",
+  Analyst: "Adopt a precise, data-driven, analytical tone.",
+  Strategist: "Adopt a high-level, big-picture strategic tone.",
+  Motivator: "Adopt a high-energy, punchy, motivational tone.",
+};
+
+// Returns a one-line tone instruction reflecting the admin's chosen AI
+// personality, for injection into AI prompts. Falls back to Coach.
+export async function getAiToneInstruction(): Promise<string> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("settings")
+    .select("ai_personality")
+    .is("client_id", null)
+    .maybeSingle();
+  return PERSONALITY_TONE[data?.ai_personality ?? "Coach"] ?? PERSONALITY_TONE.Coach;
+}
+
 // ─── Master Dashboard ────────────────────────────────────────
 
 export async function getMasterKpis(): Promise<MasterKpis> {
