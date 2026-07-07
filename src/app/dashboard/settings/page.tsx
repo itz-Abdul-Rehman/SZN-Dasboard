@@ -116,7 +116,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <DashboardLayout title="Dashboard > Settings" userName="Admin User" role="Admin">
+    <DashboardLayout title="Dashboard > Settings">
       <div className="flex flex-col lg:flex-row gap-5 animate-fade-in">
 
         {/* Sidebar nav */}

@@ -17,12 +17,16 @@ export async function POST(req: NextRequest) {
     const kpiSummary = `
 Total Revenue: $${kpis.total_revenue.toLocaleString()}
 Cash Collected: $${kpis.cash_collected.toLocaleString()}
-Calls Booked: ${kpis.calls_booked}
+Deals Won: ${kpis.deals_won}
+Calls Taken: ${kpis.calls_taken}
+Booked Calls: ${kpis.booked_calls}
 Close Rate: ${kpis.close_rate.toFixed(1)}%
+Show-Up Rate: ${kpis.show_up_rate.toFixed(1)}%
 Avg Deal Size: $${kpis.avg_deal_size.toLocaleString()}
 No-Shows: ${kpis.no_shows}
 ROAS: ${kpis.roas.toFixed(2)}x
 Ad Spend: $${kpis.ad_spend.toLocaleString()}
+Pacing: $${kpis.pacing.toLocaleString()}
 `.trim();
 
     const goalsSummary = clientGoals

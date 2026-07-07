@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       )
       .join("\n");
 
-    const kpiSummary = `Total Spend: $${kpis.total_spend.toLocaleString()} | Total Results: ${kpis.total_results} | Avg ROAS: ${kpis.avg_roas.toFixed(1)}x | Avg CTR: ${kpis.avg_ctr.toFixed(2)}%`;
+    const kpiSummary = `Total Spend: $${kpis.total_spend.toLocaleString()} | Total Results: ${kpis.total_results} | ROAS Rev: ${kpis.roas_rev.toFixed(2)}x | ROAS Cash: ${kpis.roas_cash.toFixed(2)}x | Avg CTR: ${kpis.avg_ctr.toFixed(2)}% | Cost/Call: $${kpis.cost_per_call.toFixed(0)} | Cost/Customer: $${kpis.cost_per_customer.toFixed(0)}`;
 
     const stream = await groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",

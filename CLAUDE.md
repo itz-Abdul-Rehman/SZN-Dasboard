@@ -1,7 +1,20 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # SZN Marketing Agency Dashboard — Project Context
 
 ## What This Is
 A full-stack internal operations dashboard for a digital marketing agency. Built for agency admins, closers, setters, and clients. Tracks sales performance, ad campaigns, lead outcomes, and client goals — with AI-powered insights and automated Slack alerts.
+
+## Commands
+```bash
+npm run dev      # http://localhost:3000
+npm run build    # production build (also type-checks)
+npm run lint     # ESLint via next lint
+npm run start    # serve production build
+```
+No test framework is configured.
 
 ## Tech Stack
 - **Framework**: Next.js 14 App Router (`src/` directory, TypeScript)
@@ -21,6 +34,14 @@ Four roles enforced in `src/middleware.ts`:
 - `client` — `/dashboard` only
 
 Middleware reads `profiles.role` from Supabase. No profile = treated as admin.
+
+## Supabase Client Pattern
+Three clients — pick based on context:
+- `src/lib/supabase/client.ts` → `createClient()` — browser components (uses anon key)
+- `src/lib/supabase/server.ts` → `createClient()` — Server Components / Route Handlers (uses anon key + cookies)
+- `src/lib/supabase/server.ts` → `createAdminClient()` — Route Handlers that need to bypass RLS (uses service role key)
+
+All Supabase query functions live in `src/lib/db/queries.ts`. Add new queries there rather than inlining them in pages.
 
 ## Database Tables (see `supabase-schema.sql`)
 - `profiles` — extends auth.users, stores role + full_name + slack_user_id
@@ -114,9 +135,3 @@ Custom colors used throughout: `brand`, `secondary`, `warning`, `danger`, `succe
 
 ## Seed Data
 Run `supabase/seed-only.sql` in Supabase SQL Editor after applying `supabase-schema.sql` to get 3 clients and sample calls/ads/metrics.
-
-## Local Dev
-```bash
-npm install
-npm run dev   # http://localhost:3000
-```

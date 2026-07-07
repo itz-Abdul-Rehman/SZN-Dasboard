@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTodaysCalls, getSalesKpis, logCall } from "@/lib/db/queries";
 import { createClient } from "@/lib/supabase/server";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import type { SalesKpis } from "@/lib/db/types";
 
 export async function GET(req: NextRequest) {
   const supabase = await createClient();
@@ -31,6 +33,7 @@ export async function POST(req: NextRequest) {
       lead_source: body.lead_source,
       outcome: body.outcome,
       revenue: body.revenue ?? 0,
+      cash_collected: body.cash_collected ?? 0,
       notes: body.notes,
       objection: body.objection,
     });

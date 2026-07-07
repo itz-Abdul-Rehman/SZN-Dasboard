@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import {
   fetchMetaCampaigns,
   normalizeStatus,
@@ -15,7 +15,7 @@ export async function POST() {
       return NextResponse.json({ ok: true, synced: 0, message: "No campaigns found in Meta account." });
     }
 
-    const supabase = await createClient();
+    const supabase = await createAdminClient();
 
     // Get first client_id as default (campaigns synced from Meta belong to the primary client)
     const { data: clients } = await supabase
@@ -52,12 +52,21 @@ export async function POST() {
         roas,
         flagged: costPerResult > 200,
         meta_campaign_id: c.id,
+        last_synced_at: new Date().toISOString(),
       };
 
-      // Upsert by meta_campaign_id if column exists, otherwise by name
-      const { error } = await supabase
+      // Manual upsert keyed on the stable Meta campaign id. The table has no
+      // unique constraint on meta_campaign_id/name, so onConflict upsert fails —
+      // check for an existing row and update it, otherwise insert.
+      const { data: existing } = await supabase
         .from("ad_campaigns")
-        .upsert(row, { onConflict: "name" });
+        .select("id")
+        .eq("meta_campaign_id", c.id)
+        .maybeSingle();
+
+      const { error } = existing
+        ? await supabase.from("ad_campaigns").update(row).eq("id", existing.id)
+        : await supabase.from("ad_campaigns").insert(row);
 
       if (error) errors.push(`${c.name}: ${error.message}`);
       else synced++;

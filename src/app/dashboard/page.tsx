@@ -2,11 +2,10 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import KpiCard from "@/components/dashboard/KpiCard";
 import GoalProgressBar from "@/components/dashboard/GoalProgressBar";
 import {
-  DollarSign, CreditCard, Phone, Target, BarChart2, Calendar,
-  TrendingUp, Megaphone, Percent, Activity, Trophy, Sparkles, Zap, RefreshCw
+  DollarSign, CreditCard, Phone, TrendingUp, Megaphone,
+  PhoneCall, Trophy, Sparkles, Zap, RefreshCw
 } from "lucide-react";
 import {
   AreaChart, Area, PieChart, Pie, Cell,
@@ -15,18 +14,57 @@ import {
 import { cn } from "@/lib/utils";
 import type { MasterKpis, CloserLeaderboardRow, ClientGoalProgress } from "@/lib/db/types";
 
-function fmt(n: number) {
+function fmtMoney(n: number) {
   if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
   return `$${n.toFixed(0)}`;
 }
 
-const dealVelocityData = [
-  { week: "W1", value: 12 }, { week: "W2", value: 18 }, { week: "W3", value: 24 }, { week: "W4", value: 38 },
-];
-
 function renderMarkdown(text: string) {
   return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+interface KpiCardProps {
+  label: string;
+  value: string;
+  sub?: string;
+  badge?: string;
+  badgeColor?: string;
+  icon: React.ElementType;
+  sparkline?: { day: string; value: number }[];
+}
+
+function MasterKpiCard({ label, value, sub, badge, badgeColor, icon: Icon, sparkline }: KpiCardProps) {
+  return (
+    <div className="bg-surface-low border border-border rounded-lg p-4 flex flex-col gap-2 min-h-[140px]">
+      <div className="flex items-start justify-between">
+        <span className="text-[11px] font-semibold tracking-widest text-on-surface-variant uppercase">{label}</span>
+        <Icon size={14} className="text-on-surface-variant flex-shrink-0" />
+      </div>
+      <p className="text-3xl font-bold text-on-surface leading-none">{value}</p>
+      {badge && (
+        <span className={cn("inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full w-fit", badgeColor)}>
+          {badge}
+        </span>
+      )}
+      {sub && <p className="text-xs text-on-surface-variant">{sub}</p>}
+      {sparkline && sparkline.length > 0 && (
+        <div className="mt-auto">
+          <ResponsiveContainer width="100%" height={40}>
+            <AreaChart data={sparkline} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`grad-${label}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#c8aa7a" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#c8aa7a" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area type="monotone" dataKey="value" stroke="#c8aa7a" strokeWidth={1.5} fill={`url(#grad-${label})`} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function MasterDashboard() {
@@ -56,26 +94,11 @@ export default function MasterDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const kpiCards = kpis
-    ? [
-        { label: "Total Revenue",  value: fmt(kpis.total_revenue),   trend: "12.5%", trendUp: true,  icon: DollarSign },
-        { label: "Cash Collected", value: fmt(kpis.cash_collected),  trend: "8.2%",  trendUp: true,  icon: CreditCard },
-        { label: "Calls Booked",   value: String(kpis.calls_booked), trend: "2.4%",  trendUp: false, icon: Phone },
-        { label: "Close Rate",     value: `${kpis.close_rate.toFixed(1)}%`, trend: "1.5%", trendUp: true, icon: Target },
-        { label: "Avg Deal Size",  value: fmt(kpis.avg_deal_size),   trend: "5.0%",  trendUp: true,  icon: BarChart2 },
-        { label: "No-Shows",       value: String(kpis.no_shows),     trend: "4.1%",  trendUp: false, icon: Calendar },
-        { label: "ROAS",           value: `${kpis.roas.toFixed(2)}x`, trend: "0.4x", trendUp: true,  icon: TrendingUp },
-        { label: "Ad Spend",       value: fmt(kpis.ad_spend),        trend: "Steady", trendUp: null, icon: Megaphone },
-        { label: "Conv Rate",      value: "3.2%",                    trend: "0.5%",  trendUp: true,  icon: Percent },
-        { label: "Daily Trend",    value: "+22%",                    trend: "Velocity Spike", trendUp: true, icon: Activity },
-      ]
-    : [];
-
   const topPerformer = leaderboard[0] ?? null;
 
-  async function streamAI(mode: "insights" | "next-action", setter: React.Dispatch<React.SetStateAction<string>>, setLoading: (v: boolean) => void) {
+  async function streamAI(mode: "insights" | "next-action", setter: React.Dispatch<React.SetStateAction<string>>, setLoad: (v: boolean) => void) {
     setter("");
-    setLoading(true);
+    setLoad(true);
     try {
       const res = await fetch("/api/ai/insights", {
         method: "POST",
@@ -94,35 +117,82 @@ export default function MasterDashboard() {
     } catch {
       setter("AI unavailable — please try again.");
     } finally {
-      setLoading(false);
+      setLoad(false);
     }
   }
 
+  // Build row 1 & row 2 matching the required screenshot layout
+  const row1 = kpis ? [
+    {
+      label: "Total Revenue",
+      value: fmtMoney(kpis.total_revenue),
+      icon: DollarSign,
+      sparkline: revenueChart,
+    },
+    {
+      label: "Total Deals Won",
+      value: String(kpis.deals_won),
+      icon: TrendingUp,
+      sparkline: revenueChart,
+    },
+    {
+      label: "Booked Calls",
+      value: String(kpis.booked_calls),
+      icon: PhoneCall,
+    },
+    {
+      label: "Pacing",
+      value: fmtMoney(kpis.pacing),
+      sub: "Projected monthly revenue",
+      icon: TrendingUp,
+    },
+  ] : [];
+
+  const row2 = kpis ? [
+    {
+      label: "Total Cash Collected",
+      value: fmtMoney(kpis.cash_collected),
+      icon: CreditCard,
+      sparkline: revenueChart,
+    },
+    {
+      label: "Ad Spend",
+      value: fmtMoney(kpis.ad_spend),
+      icon: Megaphone,
+    },
+    {
+      label: "Calls Taken",
+      value: String(kpis.calls_taken),
+      sub: `${kpis.no_shows} no-shows`,
+      icon: Phone,
+    },
+    {
+      label: "ROAS",
+      value: `${kpis.roas.toFixed(2)}x`,
+      icon: TrendingUp,
+    },
+  ] : [];
+
+  const Skeleton = () => (
+    <div className="bg-surface-low border border-border rounded-lg p-4 h-[140px] animate-pulse" />
+  );
+
   return (
-    <DashboardLayout title="Dashboard > Master" userName="Admin User" role="Master Account">
+    <DashboardLayout title="Dashboard > Master">
       <div className="space-y-6 animate-fade-in">
 
-        {/* KPI Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+        {/* Row 1 — Revenue, Deals Won, Booked Calls, Pacing */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {loading
-            ? Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="bg-surface-low border border-border rounded-lg p-4 h-[88px] animate-pulse" />
-              ))
-            : kpiCards.map((kpi) => (
-                <KpiCard key={kpi.label} label={kpi.label} value={kpi.value} trend={kpi.trend} trendUp={kpi.trendUp} icon={kpi.icon} />
-              ))}
-          <div className="bg-surface-low border border-border rounded-lg p-4 flex flex-col gap-2 col-span-2 sm:col-span-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold tracking-widest text-on-surface-variant uppercase">Top Performer</span>
-              <Trophy size={14} className="text-warning" />
-            </div>
-            <p className="text-lg font-bold text-on-surface leading-tight truncate" title={topPerformer?.full_name ?? ""}>
-              {loading ? "—" : (topPerformer?.full_name ?? "—")}
-            </p>
-            <p className="text-success text-xs font-medium">
-              {loading ? "—" : fmt(topPerformer?.revenue ?? 0) + " MoD"}
-            </p>
-          </div>
+            ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} />)
+            : row1.map((kpi) => <MasterKpiCard key={kpi.label} {...kpi} />)}
+        </div>
+
+        {/* Row 2 — Cash, Ad Spend, Calls Taken, ROAS */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {loading
+            ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} />)
+            : row2.map((kpi) => <MasterKpiCard key={kpi.label} {...kpi} />)}
         </div>
 
         {/* Monthly Goal Progress */}
@@ -145,8 +215,8 @@ export default function MasterDashboard() {
                     </div>
                     <GoalProgressBar
                       percentage={revPct}
-                      current={`Rev: ${fmt(client.rev_current)}`}
-                      goal={fmt(client.rev_goal)}
+                      current={`Rev: ${fmtMoney(client.rev_current)}`}
+                      goal={fmtMoney(client.rev_goal)}
                       label="Rev"
                       status={revStatus as "on-pace" | "stable" | "at-risk"}
                     />
@@ -164,12 +234,12 @@ export default function MasterDashboard() {
           )}
         </div>
 
-        {/* Leaderboard + Setter Activity */}
+        {/* Leaderboard + Top Performer */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="bg-surface-low border border-border rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-on-surface">Top Performers Leaderboard</h2>
-              <button className="text-xs text-brand hover:underline">View All</button>
+              <Trophy size={14} className="text-warning" />
             </div>
             {loading ? (
               <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-9 animate-pulse bg-surface-high rounded" />)}</div>
@@ -186,6 +256,9 @@ export default function MasterDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
+                  {leaderboard.length === 0 && (
+                    <tr><td colSpan={6} className="py-4 text-center text-xs text-on-surface-variant">No closer activity this month yet.</td></tr>
+                  )}
                   {leaderboard.map((row, i) => (
                     <tr key={row.closer_id} className="group">
                       <td className="py-2.5 pr-3 text-xs font-mono text-on-surface-variant">{String(i + 1).padStart(2, "0")}</td>
@@ -199,7 +272,7 @@ export default function MasterDashboard() {
                           <span className="text-sm text-on-surface">{row.full_name}</span>
                         </div>
                       </td>
-                      <td className="py-2.5 text-right text-sm font-mono text-on-surface">{fmt(row.revenue)}</td>
+                      <td className="py-2.5 text-right text-sm font-mono text-on-surface">{fmtMoney(row.revenue)}</td>
                       <td className="py-2.5 text-right text-sm text-on-surface-variant">{row.calls}</td>
                       <td className="py-2.5 text-right text-sm text-on-surface-variant hidden sm:table-cell">{row.close_rate.toFixed(1)}%</td>
                       <td className="py-2.5 text-right text-sm">
@@ -214,21 +287,52 @@ export default function MasterDashboard() {
             )}
           </div>
 
-          {/* Setter Activity placeholder — will be wired when setter table is populated */}
           <div className="bg-surface-low border border-border rounded-lg p-5">
-            <h2 className="text-sm font-semibold text-on-surface mb-4">Setter Activity Summary</h2>
-            <p className="text-xs text-on-surface-variant">Connect setters and their activity will appear here.</p>
+            <h2 className="text-sm font-semibold text-on-surface mb-4">Top Performer This Month</h2>
+            {loading ? (
+              <div className="h-24 animate-pulse bg-surface-high rounded" />
+            ) : topPerformer ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-surface-high border border-border flex items-center justify-center">
+                    <span className="text-base font-bold text-on-surface">
+                      {topPerformer.full_name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-on-surface">{topPerformer.full_name}</p>
+                    <p className="text-xs text-on-surface-variant">Top Closer · {topPerformer.close_rate.toFixed(1)}% close rate</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-surface border border-border rounded p-3 text-center">
+                    <p className="text-lg font-bold text-success">{fmtMoney(topPerformer.revenue)}</p>
+                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Revenue</p>
+                  </div>
+                  <div className="bg-surface border border-border rounded p-3 text-center">
+                    <p className="text-lg font-bold text-on-surface">{topPerformer.calls}</p>
+                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Calls</p>
+                  </div>
+                  <div className="bg-surface border border-border rounded p-3 text-center">
+                    <p className="text-lg font-bold text-on-surface">{topPerformer.close_rate.toFixed(0)}%</p>
+                    <p className="text-[10px] text-on-surface-variant uppercase tracking-wider mt-0.5">Close %</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-on-surface-variant">No closer activity logged this month yet.</p>
+            )}
           </div>
         </div>
 
-        {/* Charts row */}
+        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="bg-surface-low border border-border rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-semibold text-on-surface">Revenue Trend</h2>
               <span className="flex items-center gap-1.5 text-xs text-on-surface-variant">
                 <span className="w-2 h-2 bg-success inline-block" />
-                Growth
+                7 Days
               </span>
             </div>
             <ResponsiveContainer width="100%" height={180}>
@@ -254,73 +358,48 @@ export default function MasterDashboard() {
           </div>
 
           <div className="bg-surface-low border border-border rounded-lg p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-on-surface">Deal Velocity</h2>
-              <span className="text-xs text-on-surface-variant">Last 30 Days</span>
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <AreaChart data={dealVelocityData}>
-                <defs>
-                  <linearGradient id="dealGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#adc6ff" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#adc6ff" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" vertical={false} />
-                <XAxis dataKey="week" tick={{ fill: "#8e9192", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#8e9192", fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip contentStyle={{ background: "#1c1b1b", border: "1px solid #2a2a2a", borderRadius: 0, fontSize: 12 }} labelStyle={{ color: "#e5e2e1" }} />
-                <Area type="monotone" dataKey="value" stroke="#adc6ff" strokeWidth={2} fill="url(#dealGrad)" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <h2 className="text-sm font-semibold text-on-surface mb-4">Call Outcomes Distribution</h2>
+            {loading ? (
+              <div className="h-[180px] animate-pulse bg-surface-high rounded" />
+            ) : (() => {
+              const total = outcomeData.reduce((s, d) => s + d.value, 0);
+              return (
+                <div className="flex flex-col sm:flex-row items-center gap-8">
+                  <div className="relative">
+                    <ResponsiveContainer width={180} height={180}>
+                      <PieChart>
+                        <Pie data={outcomeData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" strokeWidth={0}>
+                          {outcomeData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-2xl font-bold text-on-surface">{total.toLocaleString()}</span>
+                      <span className="text-[10px] text-on-surface-variant uppercase tracking-wider">Total</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 flex-1">
+                    {outcomeData.map((item) => (
+                      <div key={item.name} className="flex items-start gap-2">
+                        <div className="w-2 h-2 mt-1 flex-shrink-0" style={{ background: item.color }} />
+                        <div>
+                          <p className="text-[11px] font-semibold tracking-wider text-on-surface-variant uppercase">{item.name}</p>
+                          <p className="text-sm font-bold text-on-surface">
+                            {total > 0 ? ((item.value / total) * 100).toFixed(0) : 0}%
+                            <span className="text-xs font-normal text-on-surface-variant ml-1">({item.value})</span>
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
-        {/* Call Outcomes Pie */}
-        <div className="bg-surface-low border border-border rounded-lg p-5">
-          <h2 className="text-sm font-semibold text-on-surface mb-4">Call Outcomes Distribution</h2>
-          {loading ? (
-            <div className="h-[200px] animate-pulse bg-surface-high rounded" />
-          ) : (() => {
-            const total = outcomeData.reduce((s, d) => s + d.value, 0);
-            return (
-              <div className="flex flex-col sm:flex-row items-center gap-8">
-                <div className="relative">
-                  <ResponsiveContainer width={200} height={200}>
-                    <PieChart>
-                      <Pie data={outcomeData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" strokeWidth={0}>
-                        {outcomeData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-2xl font-bold text-on-surface">{total.toLocaleString()}</span>
-                    <span className="text-[10px] text-on-surface-variant uppercase tracking-wider">Total</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 flex-1">
-                  {outcomeData.map((item) => (
-                    <div key={item.name} className="flex items-start gap-2">
-                      <div className="w-2 h-2 mt-1 flex-shrink-0" style={{ background: item.color }} />
-                      <div>
-                        <p className="text-[11px] font-semibold tracking-wider text-on-surface-variant uppercase">{item.name}</p>
-                        <p className="text-sm font-bold text-on-surface">
-                          {total > 0 ? ((item.value / total) * 100).toFixed(0) : 0}%
-                          <span className="text-xs font-normal text-on-surface-variant ml-1">({item.value.toLocaleString()})</span>
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* AI Row — Insights + Next Best Action */}
+        {/* AI Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-          {/* Generate Insights */}
           <div className="bg-surface-low border border-border rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -352,11 +431,7 @@ export default function MasterDashboard() {
               {(insights || insightsLoading) && (
                 <div className="space-y-1.5">
                   {insights.split("\n").filter(Boolean).map((line, i) => (
-                    <p
-                      key={i}
-                      className="text-xs text-on-surface leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(line) }}
-                    />
+                    <p key={i} className="text-xs text-on-surface leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(line) }} />
                   ))}
                   {insightsLoading && <span className="inline-block w-1.5 h-3 bg-brand animate-pulse" />}
                 </div>
@@ -364,7 +439,6 @@ export default function MasterDashboard() {
             </div>
           </div>
 
-          {/* Next Best Action */}
           <div className="bg-surface-low border border-border rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -396,18 +470,13 @@ export default function MasterDashboard() {
               {(nextActions || nextActionsLoading) && (
                 <div className="space-y-1.5">
                   {nextActions.split("\n").filter(Boolean).map((line, i) => (
-                    <p
-                      key={i}
-                      className="text-xs text-on-surface leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(line) }}
-                    />
+                    <p key={i} className="text-xs text-on-surface leading-relaxed" dangerouslySetInnerHTML={{ __html: renderMarkdown(line) }} />
                   ))}
                   {nextActionsLoading && <span className="inline-block w-1.5 h-3 bg-warning animate-pulse" />}
                 </div>
               )}
             </div>
           </div>
-
         </div>
 
       </div>

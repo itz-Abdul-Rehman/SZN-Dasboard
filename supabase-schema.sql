@@ -35,10 +35,19 @@ create table public.calls (
   id uuid primary key default gen_random_uuid(),
   closer_id uuid references public.profiles(id) on delete set null,
   client_id uuid references public.clients(id) on delete cascade,
+  booked_by_setter_id uuid references public.profiles(id) on delete set null,
   lead_name text not null,
   lead_source text default 'Facebook',
-  outcome text not null check (outcome in ('closed', 'rescheduled', 'lost', 'noshow')),
+  outcome text not null check (outcome in (
+    -- legacy values (backward compat)
+    'closed', 'rescheduled', 'lost', 'noshow',
+    -- granular outcomes
+    'paid_in_full', 'split_pay',
+    'offer_declined', 'not_a_fit', 'deposit_only',
+    'no_show', 'cancelled'
+  )),
   revenue numeric default 0,
+  cash_collected numeric default 0,
   notes text,
   objection text,
   tag text default 'follow-up' check (tag in ('closed','follow-up','hot-follow-up','no-show','declined','rescheduled')),
@@ -72,7 +81,10 @@ create table public.ad_campaigns (
   impressions bigint default 0,
   reach bigint default 0,
   results integer default 0,
+  followers bigint default 0,
   ctr numeric default 0,
+  cpm numeric default 0,
+  cpc numeric default 0,
   cost_per_result numeric default 0,
   roas numeric default 0,
   flagged boolean default false,
@@ -236,3 +248,38 @@ create trigger on_auth_user_created
 -- Go to Supabase > Authentication > Users > Add User
 -- Then run: UPDATE public.profiles SET role = 'admin' WHERE id = '<your-user-id>';
 -- ============================================================
+
+-- ============================================================
+-- MIGRATION — Run this block on EXISTING databases
+-- (safe to run multiple times; uses IF NOT EXISTS / DROP CONSTRAINT)
+-- ============================================================
+
+-- calls: add cash_collected column
+alter table public.calls
+  add column if not exists cash_collected numeric default 0;
+
+-- calls: add setter attribution column
+alter table public.calls
+  add column if not exists booked_by_setter_id uuid references public.profiles(id) on delete set null;
+
+-- calls: expand outcome check constraint to support granular values
+alter table public.calls
+  drop constraint if exists calls_outcome_check;
+
+alter table public.calls
+  add constraint calls_outcome_check check (outcome in (
+    'closed', 'rescheduled', 'lost', 'noshow',
+    'paid_in_full', 'split_pay',
+    'offer_declined', 'not_a_fit', 'deposit_only',
+    'no_show', 'cancelled'
+  ));
+
+-- ad_campaigns: add followers, cpm, cpc columns
+alter table public.ad_campaigns
+  add column if not exists followers bigint default 0;
+
+alter table public.ad_campaigns
+  add column if not exists cpm numeric default 0;
+
+alter table public.ad_campaigns
+  add column if not exists cpc numeric default 0;

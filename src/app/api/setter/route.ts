@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSetterLogs, logSetterDay, getCurrentProfile } from "@/lib/db/queries";
+import { getSetterLogs, getSetterPeriodKpis, getSetterAttribution, logSetterDay, getCurrentProfile } from "@/lib/db/queries";
 
 export async function GET() {
   const profile = await getCurrentProfile();
   const setterId = profile?.role === "setter" ? profile.id : undefined;
-  const logs = await getSetterLogs(setterId);
-  return NextResponse.json({ logs });
+  const [logs, periodKpis, attribution] = await Promise.all([
+    getSetterLogs(setterId),
+    getSetterPeriodKpis(setterId),
+    getSetterAttribution(),
+  ]);
+  return NextResponse.json({ logs, periodKpis, attribution });
 }
 
 export async function POST(request: Request) {
