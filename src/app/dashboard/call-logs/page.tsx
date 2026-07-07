@@ -36,6 +36,30 @@ export default function CallLogsPage() {
   const perPage = 8;
   const [debriefs, setDebriefs] = useState<Record<string, string>>({});
   const [debriefLoading, setDebriefLoading] = useState<string | null>(null);
+  const [closers, setClosers] = useState<{ id: string; full_name: string }[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Load closer list for reassignment (admin-only endpoint → 403 for others).
+  useEffect(() => {
+    fetch("/api/users")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.users) return;
+        setIsAdmin(true);
+        setClosers(d.users.filter((u: { role: string }) => u.role === "closer"));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleReassign(callId: string, closerId: string) {
+    if (!closerId) return;
+    await fetch("/api/calls/reassign", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId, closerId }),
+    });
+    fetchLogs();
+  }
 
   const fetchLogs = useCallback(() => {
     setLoading(true);
@@ -225,6 +249,21 @@ export default function CallLogsPage() {
                                 <p className="text-xs text-on-surface-variant">Tag: <span className="text-on-surface">{call.tag}</span></p>
                               )}
                               <p className="text-xs text-on-surface-variant mt-2">Closer: <span className="text-on-surface">{call.closer_name}</span></p>
+
+                              {isAdmin && closers.length > 0 && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className="text-xs text-on-surface-variant">Reassign to:</span>
+                                  <select
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => { e.stopPropagation(); handleReassign(call.id, e.target.value); }}
+                                    defaultValue=""
+                                    className="text-xs bg-surface border border-border px-2 py-1 text-on-surface focus:outline-none focus:border-brand"
+                                  >
+                                    <option value="" disabled>Select closer…</option>
+                                    {closers.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                                  </select>
+                                </div>
+                              )}
 
                               {/* AI Debrief — only for lost calls */}
                               {call.outcome === "lost" && (

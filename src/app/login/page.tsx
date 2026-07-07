@@ -13,6 +13,19 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const handleForgot = async () => {
+    setError("");
+    setMessage("");
+    if (!email) { setError("Enter your email above first, then click Forgot password."); return; }
+    const supabase = createClient();
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (resetError) setError(resetError.message);
+    else setMessage("Password reset link sent — check your email.");
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,10 +120,26 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Error */}
+            {/* Forgot password */}
+            <div className="flex justify-end -mt-2">
+              <button
+                type="button"
+                onClick={handleForgot}
+                className="text-xs text-on-surface-variant hover:text-brand transition-colors"
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            {/* Error / message */}
             {error && (
               <p className="text-xs text-danger bg-danger/10 border border-danger/20 rounded px-3 py-2">
                 {error}
+              </p>
+            )}
+            {message && (
+              <p className="text-xs text-success bg-success/10 border border-success/20 rounded px-3 py-2">
+                {message}
               </p>
             )}
 

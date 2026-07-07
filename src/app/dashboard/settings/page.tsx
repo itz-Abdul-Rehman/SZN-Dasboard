@@ -375,61 +375,111 @@ export default function SettingsPage() {
 }
 
 function UsersSection() {
-  const [profiles, setProfiles] = useState<{ id: string; full_name: string; role: string; active: boolean }[]>([]);
+  const [users, setUsers] = useState<{ id: string; full_name: string; role: string; active: boolean }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [inviteRole, setInviteRole] = useState("closer");
+  const [inviting, setInviting] = useState(false);
+  const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    fetch("/api/leaderboard")
-      .then((r) => r.json())
-      .then((d) => {
-        const closers = (d.closers ?? []).map((c: { closer_id: string; full_name: string }) => ({
-          id: c.closer_id, full_name: c.full_name, role: "closer", active: true,
-        }));
-        setProfiles(closers);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  const roles = ["admin", "closer", "setter", "client"];
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/users").then((r) => r.json()).then((d) => setUsers(d.users ?? [])).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  async function invite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email) return;
+    setInviting(true); setNotice("");
+    const res = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, full_name: name, role: inviteRole }),
+    });
+    const d = await res.json();
+    setInviting(false);
+    if (d.ok) { setNotice(`Invitation sent to ${email}`); setEmail(""); setName(""); load(); }
+    else setNotice(d.error ?? "Invite failed");
+  }
+
+  async function update(id: string, patch: { role?: string; active?: boolean }) {
+    await fetch("/api/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...patch }),
+    });
+    load();
+  }
 
   return (
-    <div className="bg-surface-low border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between p-5 border-b border-border">
-        <h2 className="text-sm font-semibold text-on-surface">Users & Access</h2>
-        <p className="text-xs text-on-surface-variant">Managed via Supabase Auth</p>
-      </div>
-      {loading ? (
-        <div className="p-4 space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-surface-high rounded" />)}
+    <div className="space-y-5">
+      {/* Invite */}
+      <form onSubmit={invite} className="bg-surface-low border border-border rounded-lg p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-on-surface">Invite Team Member</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <input type="email" required placeholder="email@agency.com" value={email} onChange={(e) => setEmail(e.target.value)}
+            className="bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+          <input placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)}
+            className="bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+          <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}
+            className="bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand">
+            {roles.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+          </select>
         </div>
-      ) : profiles.length === 0 ? (
-        <div className="px-5 py-10 text-center text-sm text-on-surface-variant">
-          No users yet. Add team members via Supabase Auth → invite user, then set their role in the <code className="bg-surface px-1 py-0.5 text-brand">profiles</code> table.
+        <div className="flex items-center gap-3">
+          <button type="submit" disabled={inviting}
+            className={cn("bg-primary text-on-primary text-sm font-semibold px-5 py-2.5 hover:bg-primary/90 transition-all", inviting && "opacity-60 cursor-not-allowed")}>
+            {inviting ? "Sending…" : "Send Invite"}
+          </button>
+          {notice && <span className="text-xs text-on-surface-variant">{notice}</span>}
         </div>
-      ) : (
-        <table className="w-full">
-          <thead>
-            <tr className="text-[11px] text-on-surface-variant uppercase tracking-wider border-b border-border">
-              <th className="text-left px-5 py-3 font-medium">Name</th>
-              <th className="text-left px-3 py-3 font-medium">Role</th>
-              <th className="text-left px-3 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {profiles.map((u) => (
-              <tr key={u.id} className="hover:bg-surface-container transition-colors">
-                <td className="px-5 py-3 text-sm text-on-surface font-medium">{u.full_name}</td>
-                <td className="px-3 py-3">
-                  <span className={cn("text-[11px] font-medium px-2 py-0.5 border", roleBadge[u.role] ?? roleBadge.client)}>
-                    {u.role.charAt(0).toUpperCase() + u.role.slice(1)}
-                  </span>
-                </td>
-                <td className="px-3 py-3">
-                  <span className="flex items-center gap-1 text-xs text-success"><Check size={11} />Active</span>
-                </td>
+      </form>
+
+      {/* User list */}
+      <div className="bg-surface-low border border-border rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="text-sm font-semibold text-on-surface">Users &amp; Access</h2>
+          <p className="text-xs text-on-surface-variant">{users.length} users</p>
+        </div>
+        {loading ? (
+          <div className="p-4 space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-surface-high rounded" />)}</div>
+        ) : users.length === 0 ? (
+          <div className="px-5 py-10 text-center text-sm text-on-surface-variant">No users yet. Invite your first team member above.</div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="text-[11px] text-on-surface-variant uppercase tracking-wider border-b border-border">
+                <th className="text-left px-5 py-3 font-medium">Name</th>
+                <th className="text-left px-3 py-3 font-medium">Role</th>
+                <th className="text-left px-3 py-3 font-medium">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody className="divide-y divide-border">
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-surface-container transition-colors">
+                  <td className="px-5 py-3 text-sm text-on-surface font-medium">{u.full_name}</td>
+                  <td className="px-3 py-3">
+                    <select value={u.role} onChange={(e) => update(u.id, { role: e.target.value })}
+                      className={cn("text-[11px] font-medium px-2 py-1 border bg-surface focus:outline-none focus:border-brand", roleBadge[u.role] ?? roleBadge.client)}>
+                      {roles.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3">
+                    <button onClick={() => update(u.id, { active: !u.active })}
+                      className={cn("flex items-center gap-1 text-xs", u.active ? "text-success" : "text-on-surface-variant")}>
+                      <Check size={11} />{u.active ? "Active" : "Inactive"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
