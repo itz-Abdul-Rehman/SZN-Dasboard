@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Zap, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  // If a password-recovery link lands here (e.g. redirect_to was the site root),
+  // the browser preserves the token/error in the URL hash — forward it to the
+  // reset page so the recovery isn't lost.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && (hash.includes("access_token") || hash.includes("type=recovery") || hash.includes("error_code"))) {
+      window.location.replace(`/reset-password${hash}`);
+    }
+  }, []);
 
   const handleForgot = async () => {
     setError("");

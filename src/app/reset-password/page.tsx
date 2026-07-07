@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Zap, Eye, EyeOff } from "lucide-react";
+import { Lock, Zap, Eye, EyeOff, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
@@ -14,6 +14,30 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+
+  // Expired/used-link recovery: if the URL hash carries an auth error, show a
+  // "request a fresh link" panel instead of a broken form.
+  const [expired, setExpired] = useState(false);
+  const [resendEmail, setResendEmail] = useState("");
+  const [resent, setResent] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash.includes("error_code")) {
+      setExpired(true);
+    }
+  }, []);
+
+  const handleResend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResent("");
+    if (!resendEmail) { setError("Enter your email."); return; }
+    const supabase = createClient();
+    const { error: err } = await supabase.auth.resetPasswordForEmail(resendEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (err) setError(err.message);
+    else { setError(""); setResent("New reset link sent — open the newest email and click it promptly."); }
+  };
 
   // When the user arrives from the reset email, Supabase establishes a recovery
   // session from the URL automatically (detectSessionInUrl), so updateUser works.
@@ -47,7 +71,20 @@ export default function ResetPasswordPage() {
 
       <div className="w-full max-w-sm">
         <div className="bg-surface-low border border-border rounded-lg p-7 shadow-modal">
-          {done ? (
+          {expired ? (
+            <form onSubmit={handleResend} className="space-y-4">
+              <p className="text-sm text-on-surface font-medium">This reset link expired or was already used.</p>
+              <p className="text-xs text-on-surface-variant">Enter your email to get a fresh link, then open the <strong>newest</strong> email and click it right away.</p>
+              <div className="relative">
+                <Mail size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+                <input type="email" required placeholder="you@email.com" value={resendEmail} onChange={(e) => setResendEmail(e.target.value)}
+                  className="w-full bg-surface border border-border rounded pl-10 pr-4 py-2.5 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-brand" />
+              </div>
+              {error && <p className="text-xs text-danger bg-danger/10 border border-danger/20 rounded px-3 py-2">{error}</p>}
+              {resent && <p className="text-xs text-success bg-success/10 border border-success/20 rounded px-3 py-2">{resent}</p>}
+              <button type="submit" className="w-full bg-primary text-on-primary font-semibold text-sm py-2.5 rounded hover:bg-primary/90 transition-all">Send new reset link</button>
+            </form>
+          ) : done ? (
             <p className="text-sm text-success text-center">Password updated. Redirecting…</p>
           ) : (
             <form onSubmit={handleReset} className="space-y-5">
