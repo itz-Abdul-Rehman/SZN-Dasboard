@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { sendSlackMessage } from "@/lib/slack";
+import { sendSlackMessage, buildLeaderboardMessage } from "@/lib/slack";
 import { assertCron } from "@/lib/cron-auth";
+
+const WON = ["closed", "paid_in_full", "split_pay"];
 
 function fmt(n: number) {
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
@@ -101,7 +103,19 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, sent, profiles: profiles.length });
+    // Fame / shame closer leaderboard → Slack
+    const board = profiles
+      .filter((p) => p.role === "closer")
+      .map((p) => ({
+        name: p.full_name,
+        revenue: (calls ?? [])
+          .filter((c) => c.closer_id === p.id && WON.includes(c.outcome))
+          .reduce((s, c) => s + (c.revenue ?? 0), 0),
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+    if (board.length) await sendSlackMessage(buildLeaderboardMessage(board));
+
+    return NextResponse.json({ ok: true, sent, profiles: profiles.length, leaderboard: board.length });
   } catch (err) {
     console.error("Daily targets error:", err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

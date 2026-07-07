@@ -25,6 +25,30 @@ export async function sendSlackMessage(text: string): Promise<void> {
   }
 }
 
+export function buildBigDealMessage(p: { closerName: string; leadName: string; amountUsd: number }): string {
+  return `:tada: *Big Deal Closed!* ${p.closerName} just closed *${p.leadName}* for *$${Math.round(p.amountUsd).toLocaleString()}* :moneybag:`;
+}
+
+export function buildStreakMilestoneMessage(p: { setterName: string; days: number; tier: string }): string {
+  return `:fire: *Streak Milestone!* ${p.setterName} hit a *${p.days}-day* activity streak — *${p.tier}*! :muscle:`;
+}
+
+export function buildLeaderboardMessage(rows: { name: string; revenue: number }[]): string {
+  if (!rows.length) return "";
+  const medals = [":first_place_medal:", ":second_place_medal:", ":third_place_medal:"];
+  const lines = rows.slice(0, 5).map((r, i) => `${medals[i] ?? `${i + 1}.`} ${r.name} — $${Math.round(r.revenue).toLocaleString()}`);
+  let msg = `*:trophy: Closer Leaderboard*\n${lines.join("\n")}`;
+  const bottom = rows[rows.length - 1];
+  if (rows.length > 1 && bottom.revenue === 0) {
+    msg += `\n\n:snail: ${bottom.name} hasn't landed a deal yet — let's change that today!`;
+  }
+  return msg;
+}
+
+export function buildReportSummaryMessage(p: { title: string; revenue: number; closeRate: number; roas: number }): string {
+  return `*:bar_chart: ${p.title}*\nRevenue: *$${Math.round(p.revenue).toLocaleString()}*  |  Close Rate: *${p.closeRate.toFixed(1)}%*  |  ROAS: *${p.roas.toFixed(2)}x*`;
+}
+
 export function buildLossDebriefMessage(params: {
   leadName: string;
   leadSource: string;

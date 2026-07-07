@@ -3,6 +3,7 @@ import Groq from "groq-sdk";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getCallOutcomeDistribution } from "@/lib/db/queries";
 import { toUSD } from "@/lib/exchange-rate";
+import { sendSlackMessage, buildReportSummaryMessage } from "@/lib/slack";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -126,6 +127,18 @@ Use plain text. No markdown. Be specific with numbers.`,
     });
 
     const narrative = choices[0]?.message?.content ?? "Report generation failed.";
+
+    // On the scheduled (cron GET) run, deliver a summary to Slack.
+    if (req.method === "GET") {
+      await sendSlackMessage(
+        buildReportSummaryMessage({
+          title: `Performance Report — ${dateLabel}`,
+          revenue: kpis.total_revenue,
+          closeRate: kpis.close_rate,
+          roas: kpis.roas,
+        })
+      ).catch(() => {});
+    }
 
     return NextResponse.json({
       ok: true,
