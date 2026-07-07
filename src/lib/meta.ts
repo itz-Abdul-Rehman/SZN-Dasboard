@@ -38,6 +38,29 @@ export async function fetchMetaCampaigns(): Promise<MetaCampaign[]> {
   return (data.data as MetaCampaign[]) ?? [];
 }
 
+export interface MetaDailySpend {
+  date: string;
+  spend: number;
+  impressions: number;
+}
+
+// Account-level daily spend time series, used to feed the Ads "Daily Ad Spend"
+// chart with real per-day data (campaign insights are only 30-day aggregates).
+export async function fetchAccountDailySpend(preset = "last_30d"): Promise<MetaDailySpend[]> {
+  if (!TOKEN || !ACCOUNT_ID) throw new Error("Meta credentials not configured");
+
+  const url = `${BASE}/act_${ACCOUNT_ID}/insights?fields=spend,impressions&time_increment=1&date_preset=${preset}&access_token=${TOKEN}`;
+  const res = await fetch(url);
+  const data = await res.json();
+
+  if (data.error) throw new Error(`Meta API: ${data.error.message}`);
+  return ((data.data as Array<{ date_start: string; spend?: string; impressions?: string }>) ?? []).map((d) => ({
+    date: d.date_start,
+    spend: Number(d.spend ?? 0),
+    impressions: Number(d.impressions ?? 0),
+  }));
+}
+
 export function normalizeStatus(metaStatus: string): "active" | "paused" | "archived" {
   if (metaStatus === "ACTIVE") return "active";
   if (metaStatus === "PAUSED") return "paused";

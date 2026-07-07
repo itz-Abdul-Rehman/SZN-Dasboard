@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
   fetchMetaCampaigns,
+  fetchAccountDailySpend,
   normalizeStatus,
   extractResults,
   extractCostPerResult,
 } from "@/lib/meta";
+import { toUSD } from "@/lib/exchange-rate";
 
 export async function POST() {
   try {
@@ -17,13 +19,14 @@ export async function POST() {
 
     const supabase = await createAdminClient();
 
-    // Get first client_id as default (campaigns synced from Meta belong to the primary client)
+    // Get first client as default (campaigns synced from Meta belong to the primary client)
     const { data: clients } = await supabase
       .from("clients")
-      .select("id")
+      .select("id, currency")
       .eq("active", true)
       .limit(1);
     const clientId = clients?.[0]?.id ?? null;
+    const clientCurrency = clients?.[0]?.currency ?? "USD";
 
     let synced = 0;
     const errors: string[] = [];
@@ -72,10 +75,37 @@ export async function POST() {
       else synced++;
     }
 
+    // Record per-day ad spend (converted to USD) into daily_metrics so the
+    // "Daily Ad Spend" chart has real data. Non-fatal if it fails.
+    let dailyPoints = 0;
+    if (clientId) {
+      try {
+        const daily = await fetchAccountDailySpend("last_30d");
+        for (const d of daily) {
+          const spendUsd = await toUSD(d.spend, clientCurrency);
+          const { data: ex } = await supabase
+            .from("daily_metrics")
+            .select("id")
+            .eq("client_id", clientId)
+            .eq("metric_date", d.date)
+            .maybeSingle();
+
+          const { error: dErr } = ex
+            ? await supabase.from("daily_metrics").update({ ad_spend: spendUsd }).eq("id", ex.id)
+            : await supabase.from("daily_metrics").insert({ client_id: clientId, metric_date: d.date, ad_spend: spendUsd });
+
+          if (!dErr) dailyPoints++;
+        }
+      } catch (e) {
+        errors.push(`daily spend: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       synced,
       total: campaigns.length,
+      dailyPoints,
       errors: errors.length ? errors : undefined,
     });
   } catch (err) {

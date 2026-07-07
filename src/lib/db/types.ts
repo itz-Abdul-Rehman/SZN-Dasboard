@@ -194,6 +194,7 @@ export interface CloserLeaderboardRow {
   revenue: number;
   calls: number;
   close_rate: number;
+  show_up_rate: number;
   trend_up: boolean | null;
 }
 

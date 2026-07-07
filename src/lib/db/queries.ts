@@ -36,15 +36,17 @@ export async function getMasterKpis(): Promise<MasterKpis> {
   const supabase = await createClient();
   const ms = monthStart();
 
-  const [{ data: calls }, { data: ads }, { data: setterLogs }] = await Promise.all([
+  const [{ data: calls }, { data: adDays }, { data: setterLogs }] = await Promise.all([
     supabase
       .from("calls")
       .select("outcome, revenue, cash_collected, clients(currency)")
       .gte("call_date", ms),
+    // Month-to-date ad spend (already stored in USD) so ROAS is period-consistent
+    // with the month-to-date revenue above.
     supabase
-      .from("ad_campaigns")
-      .select("spend")
-      .neq("status", "archived"),
+      .from("daily_metrics")
+      .select("ad_spend")
+      .gte("metric_date", ms),
     supabase
       .from("setter_logs")
       .select("calls_booked")
@@ -81,7 +83,7 @@ export async function getMasterKpis(): Promise<MasterKpis> {
     ? (calls_shown / (calls_shown + noShows.length)) * 100
     : 0;
   const avg_deal_size = won.length > 0 ? total_revenue / won.length : 0;
-  const ad_spend = (ads ?? []).reduce((s, a) => s + (a.spend ?? 0), 0);
+  const ad_spend = (adDays ?? []).reduce((s, a) => s + (a.ad_spend ?? 0), 0);
   const roas = ad_spend > 0 ? total_revenue / ad_spend : 0;
   const booked_calls = (setterLogs ?? []).reduce((s, l) => s + (l.calls_booked ?? 0), 0);
 
@@ -111,20 +113,22 @@ export async function getCloserLeaderboard(): Promise<CloserLeaderboardRow[]> {
 
   const { data } = await supabase
     .from("calls")
-    .select("closer_id, outcome, revenue, profiles!closer_id(full_name)")
+    .select("closer_id, outcome, revenue, profiles!closer_id(full_name), clients(currency)")
     .gte("call_date", ms);
 
   if (!data) return [];
 
-  const map = new Map<string, { full_name: string; revenue: number; calls: number; won: number; shown: number }>();
+  const map = new Map<string, { full_name: string; revenue: number; calls: number; won: number; shown: number; noshow: number }>();
 
   for (const row of data) {
     if (!row.closer_id) continue;
     const name = (row.profiles as unknown as { full_name: string } | null)?.full_name ?? "Unknown";
-    const e = map.get(row.closer_id) ?? { full_name: name, revenue: 0, calls: 0, won: 0, shown: 0 };
+    const currency = (row.clients as unknown as { currency: string } | null)?.currency ?? "USD";
+    const e = map.get(row.closer_id) ?? { full_name: name, revenue: 0, calls: 0, won: 0, shown: 0, noshow: 0 };
     if (!isRescheduled(row.outcome)) e.calls += 1;
-    if (isWon(row.outcome)) { e.won += 1; e.revenue += row.revenue ?? 0; }
+    if (isWon(row.outcome)) { e.won += 1; e.revenue += await toUSD(row.revenue ?? 0, currency); }
     if (isWon(row.outcome) || isShowedNotClosed(row.outcome)) e.shown += 1;
+    if (isNoShow(row.outcome)) e.noshow += 1;
     map.set(row.closer_id, e);
   }
 
@@ -135,7 +139,8 @@ export async function getCloserLeaderboard(): Promise<CloserLeaderboardRow[]> {
       revenue: v.revenue,
       calls: v.calls,
       close_rate: v.shown > 0 ? (v.won / v.shown) * 100 : 0,
-      trend_up: v.revenue > 80000 ? true : v.revenue < 50000 ? false : null,
+      show_up_rate: (v.shown + v.noshow) > 0 ? (v.shown / (v.shown + v.noshow)) * 100 : 0,
+      trend_up: null,
     }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5);
@@ -184,24 +189,33 @@ export async function getRevenueChartData(): Promise<{ day: string; value: numbe
   since.setDate(since.getDate() - 6);
   const sinceStr = since.toISOString().split("T")[0];
 
+  // Spec: each point is the sum of USD revenue for closed-deal calls on that
+  // date. Computed live from `calls` (not the unpopulated daily_metrics table).
   const { data } = await supabase
-    .from("daily_metrics")
-    .select("metric_date, revenue")
-    .gte("metric_date", sinceStr)
-    .order("metric_date", { ascending: true });
+    .from("calls")
+    .select("call_date, outcome, revenue, clients(currency)")
+    .gte("call_date", sinceStr);
 
-  if (!data?.length) return [];
-
+  const won = (data ?? []).filter((c) => isWon(c.outcome));
   const grouped = new Map<string, number>();
-  for (const row of data) {
-    grouped.set(row.metric_date, (grouped.get(row.metric_date) ?? 0) + row.revenue);
-  }
+  await Promise.all(
+    won.map(async (c) => {
+      const currency = (c.clients as unknown as { currency: string } | null)?.currency ?? "USD";
+      const usd = await toUSD(c.revenue ?? 0, currency);
+      grouped.set(c.call_date, (grouped.get(c.call_date) ?? 0) + usd);
+    })
+  );
 
+  // Return a continuous 7-day window so days with no closed deals show as zero.
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  return Array.from(grouped.entries()).map(([date, value]) => ({
-    day: days[new Date(date + "T12:00:00").getDay()],
-    value,
-  }));
+  const out: { day: string; value: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    out.push({ day: days[d.getDay()], value: grouped.get(key) ?? 0 });
+  }
+  return out;
 }
 
 // ─── Sales / Closer Dashboard ────────────────────────────────
@@ -258,13 +272,6 @@ export async function getSalesKpis(closerId?: string): Promise<SalesKpis> {
   );
   const cash_collected = cashAmounts.reduce((s, v) => s + v, 0);
 
-  const depositValueAmounts = await Promise.all(
-    deposits.map(async (c) => {
-      const currency = (c.clients as unknown as { currency: string } | null)?.currency ?? "USD";
-      return toUSD(c.revenue ?? 0, currency);
-    })
-  );
-
   const close_rate = calls_shown > 0 ? (won.length / calls_shown) * 100 : 0;
   const show_up_rate = (calls_shown + noShows.length) > 0
     ? (calls_shown / (calls_shown + noShows.length)) * 100
@@ -277,8 +284,10 @@ export async function getSalesKpis(closerId?: string): Promise<SalesKpis> {
   const avg_deal = won.length > 0 ? revenue / won.length : 0;
   const avg_cash = won.length > 0 ? cash_collected / won.length : 0;
 
-  // Objection counters from lost calls
-  const lostCalls = (calls ?? []).filter((c) => isShowedNotClosed(c.outcome));
+  // Objection counters — spec: only Offer Declined + Not a Fit (not Deposit Only)
+  const lostCalls = (calls ?? []).filter(
+    (c) => c.outcome === "offer_declined" || c.outcome === "not_a_fit" || c.outcome === "lost"
+  );
   const objections = { money: 0, time: 0, partner: 0, think_about_it: 0, fear: 0, value: 0, other: 0 };
   for (const c of lostCalls) {
     const obj = (c.objection ?? "").toLowerCase().replace(/\s+/g, "_");
@@ -299,7 +308,8 @@ export async function getSalesKpis(closerId?: string): Promise<SalesKpis> {
     close_rate,
     show_up_rate,
     deposits: deposits.length,
-    deposit_value: depositValueAmounts.reduce((s, v) => s + v, 0),
+    // Spec: estimated pipeline value = average deal size × number of deposits
+    deposit_value: avg_deal * deposits.length,
     revenue_per_call,
     cash_per_call,
     cash_upfront_pct,
@@ -336,13 +346,29 @@ export async function getAdCampaigns(clientId?: string): Promise<AdCampaign[]> {
 
   let query = supabase
     .from("ad_campaigns")
-    .select("*")
+    .select("*, clients(currency)")
     .order("spend", { ascending: false });
 
   if (clientId) query = query.eq("client_id", clientId);
 
   const { data } = await query;
-  return (data as AdCampaign[]) ?? [];
+  if (!data) return [];
+
+  // Convert money fields from the ad account's billing currency (taken from the
+  // owning client) to USD at view time, per spec. Non-money fields are untouched.
+  return Promise.all(
+    data.map(async (row) => {
+      const { clients, ...c } = row as AdCampaign & { clients?: { currency: string } | null };
+      const currency = clients?.currency ?? "USD";
+      return {
+        ...(c as AdCampaign),
+        spend: await toUSD(c.spend ?? 0, currency),
+        cpm: await toUSD(c.cpm ?? 0, currency),
+        cpc: await toUSD(c.cpc ?? 0, currency),
+        cost_per_result: await toUSD(c.cost_per_result ?? 0, currency),
+      } as AdCampaign;
+    })
+  );
 }
 
 export async function getAdsKpis(clientId?: string): Promise<AdsKpis> {
@@ -353,7 +379,13 @@ export async function getAdsKpis(clientId?: string): Promise<AdsKpis> {
   // Exclude archived campaigns from spend metrics
   const billable = campaigns.filter((c) => c.status !== "archived");
 
-  const total_spend = billable.reduce((s, c) => s + c.spend, 0);
+  // Month-to-date ad spend (stored in USD by the sync) — period-consistent with
+  // the revenue window below and already currency-converted.
+  let spendQuery = supabase.from("daily_metrics").select("ad_spend").gte("metric_date", ms);
+  if (clientId) spendQuery = spendQuery.eq("client_id", clientId);
+  const { data: adDays } = await spendQuery;
+  const total_spend = (adDays ?? []).reduce((s, d) => s + (d.ad_spend ?? 0), 0);
+
   const total_impressions = billable.reduce((s, c) => s + c.impressions, 0);
   const total_followers = billable.reduce((s, c) => s + (c.followers ?? 0), 0);
 
@@ -418,6 +450,9 @@ export async function getAdsKpis(clientId?: string): Promise<AdsKpis> {
   const total_conversations = (setterLogs ?? []).reduce((s, l) => s + (l.conversations ?? 0), 0);
   const cost_per_convo = total_conversations > 0 ? total_spend / total_conversations : 0;
 
+  // Spec defines this as spend ÷ followers *gained* (end − start of period). No
+  // follower snapshots are collected yet, so we fall back to the stored follower
+  // total; the card shows "—" whenever that is zero.
   const cost_per_follower = total_followers > 0 ? total_spend / total_followers : 0;
   const cost_per_result = total_results > 0 ? total_spend / total_results : 0;
 
@@ -535,17 +570,19 @@ export async function getFullLeaderboard() {
 
   const { data: callData } = await supabase
     .from("calls")
-    .select("closer_id, outcome, revenue, profiles!closer_id(full_name)")
+    .select("closer_id, outcome, revenue, profiles!closer_id(full_name), clients(currency)")
     .gte("call_date", ms);
 
-  const map = new Map<string, { full_name: string; revenue: number; calls: number; won: number; shown: number }>();
+  const map = new Map<string, { full_name: string; revenue: number; calls: number; won: number; shown: number; noshow: number }>();
   for (const row of callData ?? []) {
     if (!row.closer_id) continue;
     const name = (row.profiles as unknown as { full_name: string } | null)?.full_name ?? "Unknown";
-    const e = map.get(row.closer_id) ?? { full_name: name, revenue: 0, calls: 0, won: 0, shown: 0 };
+    const currency = (row.clients as unknown as { currency: string } | null)?.currency ?? "USD";
+    const e = map.get(row.closer_id) ?? { full_name: name, revenue: 0, calls: 0, won: 0, shown: 0, noshow: 0 };
     if (!isRescheduled(row.outcome)) e.calls += 1;
-    if (isWon(row.outcome)) { e.won += 1; e.revenue += row.revenue ?? 0; }
+    if (isWon(row.outcome)) { e.won += 1; e.revenue += await toUSD(row.revenue ?? 0, currency); }
     if (isWon(row.outcome) || isShowedNotClosed(row.outcome)) e.shown += 1;
+    if (isNoShow(row.outcome)) e.noshow += 1;
     map.set(row.closer_id, e);
   }
 
@@ -553,7 +590,8 @@ export async function getFullLeaderboard() {
     .map(([closer_id, v]) => ({
       closer_id, full_name: v.full_name, revenue: v.revenue, calls: v.calls,
       close_rate: v.shown > 0 ? (v.won / v.shown) * 100 : 0,
-      trend_up: v.revenue > 80000 ? true : v.revenue < 50000 ? false : null,
+      show_up_rate: (v.shown + v.noshow) > 0 ? (v.shown / (v.shown + v.noshow)) * 100 : 0,
+      trend_up: null as boolean | null,
     }))
     .sort((a, b) => b.revenue - a.revenue);
 
@@ -646,7 +684,7 @@ export async function getSetterAttribution(): Promise<SetterAttribution[]> {
 
   const { data: calls } = await supabase
     .from("calls")
-    .select("booked_by_setter_id, outcome, revenue, profiles!booked_by_setter_id(full_name)")
+    .select("booked_by_setter_id, outcome, revenue, profiles!booked_by_setter_id(full_name), clients(currency)")
     .gte("call_date", ms)
     .not("booked_by_setter_id", "is", null);
 
@@ -656,9 +694,10 @@ export async function getSetterAttribution(): Promise<SetterAttribution[]> {
   for (const row of calls) {
     if (!row.booked_by_setter_id) continue;
     const name = (row.profiles as unknown as { full_name: string } | null)?.full_name ?? "Unknown";
+    const currency = (row.clients as unknown as { currency: string } | null)?.currency ?? "USD";
     const e = map.get(row.booked_by_setter_id) ?? { full_name: name, calls_set: 0, deals_closed: 0, revenue: 0 };
     if (!isRescheduled(row.outcome)) e.calls_set += 1;
-    if (isWon(row.outcome)) { e.deals_closed += 1; e.revenue += row.revenue ?? 0; }
+    if (isWon(row.outcome)) { e.deals_closed += 1; e.revenue += await toUSD(row.revenue ?? 0, currency); }
     map.set(row.booked_by_setter_id, e);
   }
 
