@@ -128,6 +128,45 @@ export async function getMasterKpis(): Promise<MasterKpis> {
   };
 }
 
+export type TrendDir = "up" | "down" | "flat";
+export interface KpiTrends { revenue: TrendDir; deals: TrendDir; calls: TrendDir; cash: TrendDir }
+
+// Today-vs-yesterday direction for the headline KPIs, computed from calls.
+export async function getKpiTrends(): Promise<KpiTrends> {
+  const supabase = await createClient();
+  const today = new Date().toISOString().split("T")[0];
+  const yest = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+
+  const { data } = await supabase
+    .from("calls")
+    .select("call_date, outcome, revenue, cash_collected, clients(currency)")
+    .in("call_date", [today, yest]);
+
+  const agg: Record<string, { rev: number; deals: number; calls: number; cash: number }> = {
+    [today]: { rev: 0, deals: 0, calls: 0, cash: 0 },
+    [yest]: { rev: 0, deals: 0, calls: 0, cash: 0 },
+  };
+  for (const c of data ?? []) {
+    const a = agg[c.call_date];
+    if (!a) continue;
+    if (!isRescheduled(c.outcome)) a.calls++;
+    if (isWon(c.outcome)) {
+      a.deals++;
+      const cur = (c.clients as unknown as { currency: string } | null)?.currency ?? "USD";
+      a.rev += await toUSD(c.revenue ?? 0, cur);
+      a.cash += await toUSD(c.outcome === "split_pay" ? (c.cash_collected ?? 0) : (c.revenue ?? 0), cur);
+    }
+  }
+
+  const dir = (t: number, y: number): TrendDir => (t > y ? "up" : t < y ? "down" : "flat");
+  return {
+    revenue: dir(agg[today].rev, agg[yest].rev),
+    deals: dir(agg[today].deals, agg[yest].deals),
+    calls: dir(agg[today].calls, agg[yest].calls),
+    cash: dir(agg[today].cash, agg[yest].cash),
+  };
+}
+
 export async function getCloserLeaderboard(): Promise<CloserLeaderboardRow[]> {
   const supabase = await createClient();
   const ms = monthStart();

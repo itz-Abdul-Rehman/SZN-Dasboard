@@ -32,14 +32,28 @@ interface KpiCardProps {
   badgeColor?: string;
   icon: React.ElementType;
   sparkline?: { day: string; value: number }[];
+  trend?: "up" | "down" | "flat";
 }
 
-function MasterKpiCard({ label, value, sub, badge, badgeColor, icon: Icon, sparkline }: KpiCardProps) {
+function MasterKpiCard({ label, value, sub, badge, badgeColor, icon: Icon, sparkline, trend }: KpiCardProps) {
   return (
     <div className="bg-surface-low border border-border rounded-lg p-4 flex flex-col gap-2 min-h-[140px]">
       <div className="flex items-start justify-between">
         <span className="text-[11px] font-semibold tracking-widest text-on-surface-variant uppercase">{label}</span>
-        <Icon size={14} className="text-on-surface-variant flex-shrink-0" />
+        <div className="flex items-center gap-1.5">
+          {trend && (
+            <span
+              title="vs yesterday"
+              className={cn(
+                "text-xs font-bold leading-none",
+                trend === "up" ? "text-success" : trend === "down" ? "text-danger" : "text-on-surface-variant"
+              )}
+            >
+              {trend === "up" ? "↑" : trend === "down" ? "↓" : "→"}
+            </span>
+          )}
+          <Icon size={14} className="text-on-surface-variant flex-shrink-0" />
+        </div>
       </div>
       <p className="text-3xl font-bold text-on-surface leading-none">{value}</p>
       {badge && (
@@ -73,6 +87,7 @@ export default function MasterDashboard() {
   const [clientGoals, setClientGoals] = useState<ClientGoalProgress[]>([]);
   const [revenueChart, setRevenueChart] = useState<{ day: string; value: number }[]>([]);
   const [outcomeData, setOutcomeData] = useState<{ name: string; value: number; color: string }[]>([]);
+  const [trends, setTrends] = useState<{ revenue: "up" | "down" | "flat"; deals: "up" | "down" | "flat"; calls: "up" | "down" | "flat"; cash: "up" | "down" | "flat" } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [insights, setInsights] = useState("");
@@ -90,6 +105,7 @@ export default function MasterDashboard() {
         setClientGoals(d.clientGoals);
         setRevenueChart(d.revenueChart);
         setOutcomeData(d.outcomeData ?? []);
+        setTrends(d.trends ?? null);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -128,12 +144,14 @@ export default function MasterDashboard() {
       value: fmtMoney(kpis.total_revenue),
       icon: DollarSign,
       sparkline: revenueChart,
+      trend: trends?.revenue,
     },
     {
       label: "Total Deals Won",
       value: String(kpis.deals_won),
       icon: TrendingUp,
       sparkline: revenueChart,
+      trend: trends?.deals,
     },
     {
       label: "Booked Calls",
@@ -154,6 +172,7 @@ export default function MasterDashboard() {
       value: fmtMoney(kpis.cash_collected),
       icon: CreditCard,
       sparkline: revenueChart,
+      trend: trends?.cash,
     },
     {
       label: "Ad Spend",
@@ -165,6 +184,7 @@ export default function MasterDashboard() {
       value: String(kpis.calls_taken),
       sub: `${kpis.no_shows} no-shows`,
       icon: Phone,
+      trend: trends?.calls,
     },
     {
       label: "ROAS",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getCallOutcomeDistribution } from "@/lib/db/queries";
 import { toUSD } from "@/lib/exchange-rate";
 
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     try { body = await req.json(); } catch { /* no body */ }
 
     const { dateFrom, dateTo, reportTitle } = body;
-    const supabase = await createClient();
+    const supabase = await createAdminClient();
 
     // ── KPIs filtered by date range ────────────────────────────
     let callsQuery = supabase.from("calls").select("outcome, revenue, clients(currency)");

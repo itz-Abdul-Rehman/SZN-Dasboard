@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { sendSlackMessage } from "@/lib/slack";
+import { assertCron } from "@/lib/cron-auth";
 
 function fmt(n: number) {
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
   return `$${n.toFixed(0)}`;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const denied = assertCron(req);
+  if (denied) return denied;
+
   try {
-    const supabase = await createClient();
+    const supabase = await createAdminClient();
 
     // Fetch all active closers and setters
     const { data: profiles } = await supabase

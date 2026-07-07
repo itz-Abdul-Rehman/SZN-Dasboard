@@ -75,26 +75,39 @@ export async function POST() {
       else synced++;
     }
 
-    // Record per-day ad spend (converted to USD) into daily_metrics so the
-    // "Daily Ad Spend" chart has real data. Non-fatal if it fails.
+    // Record 90 days of per-day ad spend (converted to USD) into daily_metrics
+    // (feeds the spend chart) and ad_metrics_history (90-day archive per spec).
+    // Non-fatal if it fails.
     let dailyPoints = 0;
     if (clientId) {
       try {
-        const daily = await fetchAccountDailySpend("last_30d");
+        const daily = await fetchAccountDailySpend("last_90d");
         for (const d of daily) {
           const spendUsd = await toUSD(d.spend, clientCurrency);
+
           const { data: ex } = await supabase
             .from("daily_metrics")
             .select("id")
             .eq("client_id", clientId)
             .eq("metric_date", d.date)
             .maybeSingle();
-
           const { error: dErr } = ex
             ? await supabase.from("daily_metrics").update({ ad_spend: spendUsd }).eq("id", ex.id)
             : await supabase.from("daily_metrics").insert({ client_id: clientId, metric_date: d.date, ad_spend: spendUsd });
-
           if (!dErr) dailyPoints++;
+
+          // 90-day ad history archive (account-level daily snapshot).
+          const { data: hx } = await supabase
+            .from("ad_metrics_history")
+            .select("id")
+            .is("campaign_id", null)
+            .eq("metric_date", d.date)
+            .maybeSingle();
+          if (hx) {
+            await supabase.from("ad_metrics_history").update({ spend: spendUsd, impressions: d.impressions }).eq("id", hx.id);
+          } else {
+            await supabase.from("ad_metrics_history").insert({ campaign_id: null, metric_date: d.date, spend: spendUsd, impressions: d.impressions });
+          }
         }
       } catch (e) {
         errors.push(`daily spend: ${e instanceof Error ? e.message : String(e)}`);
