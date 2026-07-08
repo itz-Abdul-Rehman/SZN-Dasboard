@@ -75,11 +75,12 @@ const config: Config = {
         "mono-data": ["14px", { lineHeight: "20px", fontWeight: "400" }],
       },
       borderRadius: {
-        sm: "2px",
-        DEFAULT: "4px",
-        md: "6px",
-        lg: "8px",
-        xl: "12px",
+        sm: "6px",
+        DEFAULT: "8px",
+        md: "10px",
+        lg: "12px",
+        xl: "16px",
+        "2xl": "20px",
         full: "9999px",
       },
       spacing: {

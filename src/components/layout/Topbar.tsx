@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, ChevronDown, LogOut, User } from "lucide-react";
+import { ChevronDown, LogOut, User } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 interface TopbarProps {
@@ -60,12 +60,6 @@ export default function Topbar({ title, subtitle, role = "Admin", userName = "Ad
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Notification bell */}
-        <button className="relative w-8 h-8 flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors">
-          <Bell size={16} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-brand" />
-        </button>
-
         {/* User profile dropdown */}
         <div className="relative" ref={menuRef}>
           <button

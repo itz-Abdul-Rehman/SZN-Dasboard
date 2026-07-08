@@ -9,12 +9,22 @@ import type { Call } from "@/lib/db/types";
 type CallRow = Call & { closer_name: string };
 
 const outcomeBadge: Record<string, string> = {
-  closed: "badge-closed", rescheduled: "badge-rescheduled",
-  lost: "badge-lost", noshow: "badge-noshow",
+  closed: "badge-closed", paid_in_full: "badge-closed", split_pay: "badge-closed",
+  rescheduled: "badge-rescheduled",
+  lost: "badge-lost", offer_declined: "badge-lost", not_a_fit: "badge-lost", deposit_only: "badge-lost",
+  noshow: "badge-noshow", no_show: "badge-noshow", cancelled: "badge-noshow",
 };
 const outcomeLabel: Record<string, string> = {
-  closed: "Closed", rescheduled: "Rescheduled", lost: "Lost", noshow: "No-Show",
+  closed: "Closed", paid_in_full: "Paid in Full", split_pay: "Split Pay",
+  rescheduled: "Rescheduled", lost: "Lost", offer_declined: "Offer Declined",
+  not_a_fit: "Not a Fit", deposit_only: "Deposit", noshow: "No-Show", no_show: "No-Show", cancelled: "Cancelled",
 };
+
+// Outcomes selectable when editing a call (matches the DB check constraint).
+const editableOutcomes = [
+  "paid_in_full", "split_pay", "offer_declined", "not_a_fit", "deposit_only",
+  "no_show", "cancelled", "rescheduled",
+];
 
 const presets = [
   { label: "This Month", value: "thismonth" },
@@ -113,13 +123,63 @@ export default function CallLogsPage() {
     }
   }
 
+  const [editCall, setEditCall] = useState<CallRow | null>(null);
+  const [saving, setSaving] = useState(false);
+
   function handleDelete(id: string) {
     if (!confirm("Delete this call log?")) return;
     fetch(`/api/call-logs`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
-    }).then(() => fetchLogs());
+    }).then((r) => r.json()).then((d) => {
+      if (d.error) alert(`Delete failed: ${d.error}`);
+      else fetchLogs();
+    });
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editCall) return;
+    setSaving(true);
+    const res = await fetch(`/api/call-logs`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editCall.id,
+        lead_name: editCall.lead_name,
+        lead_source: editCall.lead_source,
+        outcome: editCall.outcome,
+        revenue: Number(editCall.revenue ?? 0),
+        cash_collected: Number(editCall.cash_collected ?? 0),
+        notes: editCall.notes,
+        objection: editCall.objection,
+      }),
+    });
+    const d = await res.json();
+    setSaving(false);
+    if (d.error) { alert(`Save failed: ${d.error}`); return; }
+    setEditCall(null);
+    fetchLogs();
+  }
+
+  // Export all calls matching the current filters as a CSV download.
+  async function handleExport() {
+    const params = new URLSearchParams({ page: "1", perPage: "10000", outcome: outcomeFilter, preset: activePreset });
+    if (search) params.set("search", search);
+    const d = await fetch(`/api/call-logs?${params}`).then((r) => r.json());
+    const rows: CallRow[] = d.calls ?? [];
+    const headers = ["Date", "Lead", "Source", "Outcome", "Revenue", "Cash", "Closer", "Tag", "Notes"];
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [headers.join(",")]
+      .concat(rows.map((c) => [c.call_date, c.lead_name, c.lead_source, c.outcome, c.revenue, c.cash_collected, c.closer_name, c.tag, c.notes].map(esc).join(",")))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `call-logs-${activePreset}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -168,7 +228,7 @@ export default function CallLogsPage() {
             ))}
           </div>
 
-          <button className="flex items-center gap-1.5 border border-border text-on-surface-variant text-xs px-3 py-2 hover:bg-surface-container transition-colors flex-shrink-0">
+          <button onClick={handleExport} className="flex items-center gap-1.5 border border-border text-on-surface-variant text-xs px-3 py-2 hover:bg-surface-container transition-colors flex-shrink-0">
             <Download size={13} />
             Export
           </button>
@@ -216,8 +276,8 @@ export default function CallLogsPage() {
                       <td className="px-3 py-3 text-sm text-on-surface font-medium">{call.lead_name}</td>
                       <td className="px-3 py-3 text-xs text-on-surface-variant hidden md:table-cell">{call.lead_source}</td>
                       <td className="px-3 py-3">
-                        <span className={cn("text-[11px] font-medium px-2 py-0.5", outcomeBadge[call.outcome])}>
-                          {outcomeLabel[call.outcome]}
+                        <span className={cn("text-[11px] font-medium px-2 py-0.5", outcomeBadge[call.outcome] ?? "badge-rescheduled")}>
+                          {outcomeLabel[call.outcome] ?? call.outcome}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-right text-sm font-mono text-on-surface">
@@ -300,7 +360,10 @@ export default function CallLogsPage() {
                               )}
                             </div>
                             <div className="flex gap-2 flex-shrink-0">
-                              <button className="flex items-center gap-1.5 text-xs text-on-surface-variant border border-border px-3 py-1.5 hover:bg-surface-high transition-colors">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setEditCall(call); }}
+                                className="flex items-center gap-1.5 text-xs text-on-surface-variant border border-border px-3 py-1.5 hover:bg-surface-high transition-colors"
+                              >
                                 <Pencil size={12} /> Edit
                               </button>
                               <button
@@ -344,6 +407,59 @@ export default function CallLogsPage() {
         </div>
 
       </div>
+
+      {/* Edit modal */}
+      {editCall && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setEditCall(null)}>
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleSaveEdit}
+            className="bg-surface-low border border-border rounded-lg p-6 w-full max-w-md space-y-4 animate-fade-in"
+          >
+            <h2 className="text-sm font-semibold text-on-surface">Edit Call — {editCall.lead_name}</h2>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-on-surface-variant col-span-2">Lead name
+                <input value={editCall.lead_name ?? ""} onChange={(e) => setEditCall({ ...editCall, lead_name: e.target.value })}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+              </label>
+              <label className="text-xs text-on-surface-variant col-span-2">Source
+                <input value={editCall.lead_source ?? ""} onChange={(e) => setEditCall({ ...editCall, lead_source: e.target.value as CallRow["lead_source"] })}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+              </label>
+              <label className="text-xs text-on-surface-variant col-span-2">Outcome
+                <select value={editCall.outcome} onChange={(e) => setEditCall({ ...editCall, outcome: e.target.value as CallRow["outcome"] })}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand">
+                  {editableOutcomes.map((o) => <option key={o} value={o}>{outcomeLabel[o] ?? o}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-on-surface-variant">Revenue
+                <input type="number" value={editCall.revenue ?? 0} onChange={(e) => setEditCall({ ...editCall, revenue: Number(e.target.value) })}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+              </label>
+              <label className="text-xs text-on-surface-variant">Cash collected
+                <input type="number" value={editCall.cash_collected ?? 0} onChange={(e) => setEditCall({ ...editCall, cash_collected: Number(e.target.value) })}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+              </label>
+              <label className="text-xs text-on-surface-variant col-span-2">Objection
+                <input value={editCall.objection ?? ""} onChange={(e) => setEditCall({ ...editCall, objection: e.target.value })}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+              </label>
+              <label className="text-xs text-on-surface-variant col-span-2">Notes
+                <textarea value={editCall.notes ?? ""} onChange={(e) => setEditCall({ ...editCall, notes: e.target.value })} rows={2}
+                  className="mt-1 w-full bg-surface border border-border px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-brand" />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditCall(null)} className="text-xs text-on-surface-variant border border-border px-4 py-2 hover:bg-surface-container transition-colors">Cancel</button>
+              <button type="submit" disabled={saving} className={cn("text-xs font-semibold bg-primary text-on-primary px-4 py-2 hover:bg-primary/90 transition-all", saving && "opacity-60 cursor-not-allowed")}>
+                {saving ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </DashboardLayout>
   );
 }
