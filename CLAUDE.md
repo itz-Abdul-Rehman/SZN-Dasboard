@@ -24,7 +24,8 @@ No test framework is configured.
 - **Alerts**: Slack API (`chat.postMessage`) via Bot Token
 - **Ads**: Meta Graph API v19 (campaigns + insights)
 - **Currency**: ExchangeRate-API v6 with 6-hour in-memory cache
-- **Deployment**: Vercel (crons via cron-job.org for free tier)
+- **Email**: Resend SMTP via Supabase Auth (password reset + invites)
+- **Deployment**: AWS Lightsail — PM2 process manager, cron via the server's system crontab (NOT Vercel)
 
 ## Role-Based Access
 Four roles enforced in `src/middleware.ts`:
@@ -80,12 +81,20 @@ src/
     ai/campaign-narrative/route.ts — streaming ad narrative
     reports/generate/route.ts      — full report with date-range filtering
     meta/sync/route.ts             — upsert Meta campaigns to Supabase
-    cron/anomaly-check/route.ts    — 4-hourly anomaly detection → Slack
-    cron/daily-targets/route.ts    — daily 8am Slack DMs to closers/setters
+    cron/anomaly-check/route.ts    — 4-hourly anomaly detection (from calls) → Slack
+    cron/daily-targets/route.ts    — daily 8am targets + fame/shame leaderboard → Slack
     settings/goals/route.ts        — GET/PATCH client goals
+    settings/route.ts              — GET/PATCH agency settings (AI personality, thresholds)
+    users/route.ts                 — admin: list / invite-by-email / update role+status
+    calls/reassign/route.ts        — admin: reassign a call to another closer
     slack/test/route.ts            — test Slack connection
     exchange-rate/route.ts         — currency rates endpoint
+  lib/cron-auth.ts                 — assertCron() guard (CRON_SECRET) for cron endpoints
 ```
+
+Cron endpoints use `createAdminClient()` (they run with no user session). AI
+insights/loss-debrief read the saved AI personality via `getAiToneInstruction()`.
+The `/reset-password` page + login "Forgot password?" drive the Supabase email flow.
 
 ## Streaming Pattern
 AI endpoints use `ReadableStream` + Groq async iterator:
@@ -102,18 +111,19 @@ return new Response(stream, { headers: { "Content-Type": "text/plain" } });
 ```
 Client reads with `getReader()` + `TextDecoder` and appends to state.
 
-## Cron Jobs (vercel.json — requires Pro, use cron-job.org for free)
-| Endpoint | Schedule | Purpose |
-|---|---|---|
-| `/api/cron/anomaly-check` | every 4 hours | Detects >20%/>35% metric deviations, Slack alert |
-| `/api/cron/daily-targets` | 8am daily | Personalized Slack DMs to each closer/setter |
-| `/api/meta/sync` | every hour | Pulls Meta campaign data into Supabase |
-| `/api/reports/generate` | 11:59pm daily | Auto-generates daily report |
+## Cron Jobs (server system crontab on Lightsail — curls `localhost:3000`)
+| Endpoint | Schedule | Purpose | Guard |
+|---|---|---|---|
+| `/api/meta/sync` | every hour | Pulls Meta campaigns + 90-day daily spend into Supabase | none |
+| `/api/cron/anomaly-check` | every 4 hours | >warn%/>35% deviations (from calls) → Slack | `?key=$CRON_SECRET` |
+| `/api/cron/daily-targets` | 8am daily | Per-user targets + fame/shame leaderboard → Slack | `?key=$CRON_SECRET` |
+| `/api/reports/generate` | 11:59pm daily | Auto-generates daily report + Slack summary | none |
 
-All cron endpoints export `GET` alias of their `POST` handler.
+Cron endpoints export a `GET` alias. Guarded ones call `assertCron()` — a no-op
+until `CRON_SECRET` is set, then require the key. Crontab logs to `/home/admin/cron.log`.
 
 ## Report Date Filtering
-`/api/reports/generate` accepts `{ dateFrom?, dateTo?, reportTitle? }` in POST body. When provided, all Supabase queries filter to that date range. The reports page passes each static report entry's specific `dateFrom`/`dateTo` so clicking Download fetches that period's data — not today's.
+`/api/reports/generate` accepts `{ dateFrom?, dateTo?, reportTitle? }` in POST body. When provided, all Supabase queries filter to that date range. The reports page's Daily/Weekly/Monthly buttons pass the matching range (`rangeFor()`); the old hardcoded report list was removed.
 
 ## Environment Variables Required
 ```
@@ -128,7 +138,16 @@ META_AD_ACCOUNT_ID
 SLACK_BOT_TOKEN
 SLACK_CHANNEL_ID
 EXCHANGE_RATE_API_KEY
+CRON_SECRET            # guards /api/cron/* (anomaly-check, daily-targets)
 ```
+
+## Data Flow Notes (KPIs)
+- Sales/master/setter KPIs compute live from `calls` / `setter_logs` (source of truth).
+- Meta sync writes per-day USD `ad_spend` into `daily_metrics` and archives 90 days
+  into `ad_metrics_history`. Revenue trend chart reads `calls`; ad-spend chart reads
+  `daily_metrics`. Ad spend + leaderboard/attribution revenue are USD-converted.
+- Master ROAS uses month-to-date `daily_metrics.ad_spend` (period-consistent).
+- See `kpi_calculations.md` for the canonical per-card formulas.
 
 ## Design Tokens (Tailwind)
 Custom colors used throughout: `brand`, `secondary`, `warning`, `danger`, `success`, `primary`, `on-primary`. Surfaces: `surface`, `surface-low`, `surface-high`, `surface-highest`, `surface-container`. Text: `on-surface`, `on-surface-variant`. All defined in `tailwind.config.ts`.
